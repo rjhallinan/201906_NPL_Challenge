@@ -63,6 +63,7 @@ __email__ = "rhallinan@netcraftsmen.com"
 #
 
 """
+	20190606 - Increased use of tempfile to not create a template file during script execution.
 	20190603 - Initial version
 """
 
@@ -192,8 +193,18 @@ def build_iproute_template():
 		'\n',
 		'EOF\n',	
 	]
-	with open_file('cisco_ios_show_ip_route.template','w') as fileOut:
-		fileOut.writelines(fileContents)
+
+	with tempfile.TemporaryFile('w+t') as curTemplate:
+		# build the tempfile with the template information
+		curTemplate.writelines(fileContents)
+
+		# go to the beginning of the file
+		curTemplate.seek(0)
+		
+		# build the parser
+		parser = textfsm.TextFSM(curTemplate)
+
+		return parser
 
 def outputExcel(listOutput,fileName,tabName):
 	""" listOutput: this should be a list of lists; first item should be header file which should be written.
@@ -280,7 +291,7 @@ def main(system_arguments):
 	ipAddressList = ['10.102.3.11', '10.102.3.12', '10.102.3.13']
 
 	# build the template
-	build_iproute_template()
+	re_table = build_iproute_template()
 
 	# loop through each device
 	for deviceIP in ipAddressList:
@@ -291,9 +302,9 @@ def main(system_arguments):
 			# this means a return of False which means that there was no connection made - so done with this device
 			continue		
 
-		# read in the template file
-		with open('cisco_ios_show_ip_route.template','r') as fileIn:
-			re_table = textfsm.TextFSM(fileIn)
+		# # read in the template file
+		# with open('cisco_ios_show_ip_route.template','r') as fileIn:
+			# re_table = textfsm.TextFSM(fileIn)
 			
 		with tempfile.TemporaryFile('w+t') as shRoute:
 			# execute the command on the device
@@ -311,6 +322,9 @@ def main(system_arguments):
 			# read in the data - first seek to 0, then parse it
 			shRoute.seek(0)
 			routeInfo = re_table.ParseText(shRoute.read())
+
+		# reset the parser after each run
+		re_table.Reset()
 
 		# get a set of the unique protocol, network, and mask
 		# protocol is field 0, network is field 2, mask is field 3
@@ -334,12 +348,6 @@ def main(system_arguments):
 		print("The number of OSPF routes is: " + str(len([ x for x in uniqueRoutes if x[0]=="O" ])))
 		print("The number of static routes is: " + str(len([ x for x in uniqueRoutes if x[0]=="S" ])))
 		print("\n" * 1)
-
-	# delete the file that I added
-	try:
-		os.remove('cisco_ios_show_ip_route.template')
-	except:
-		pass
 
 if __name__ == "__main__":
 
